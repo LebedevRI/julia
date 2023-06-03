@@ -514,6 +514,9 @@ let exename = `$(Base.julia_cmd()) --startup-file=no --color=no`
         @test isempty(got) || got
     end
 
+    # --sanitizer-coverage
+    @test readchomp(`$exename -E "Bool(Base.JLOptions().sanitizer_coverage)"`) == "false"
+    @test readchomp(`$exename -E "Bool(Base.JLOptions().sanitizer_coverage)" --sanitizer-coverage`) == "true"
 
     # --optimize
     @test readchomp(`$exename -E "Base.JLOptions().opt_level"`) == "2"

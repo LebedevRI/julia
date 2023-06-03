@@ -222,6 +222,7 @@ function julia_cmd(julia=joinpath(Sys.BINDIR, julia_exename()); cpu_target::Unio
             isempty(coverage_file) || push!(addflags, "--code-coverage=$coverage_file")
         end
     end
+    opts.sanitizer_coverage == 0 || push!(addflags, "--sanitizer-coverage")
     if opts.malloc_log == 1
         push!(addflags, "--track-allocation=user")
     elseif opts.malloc_log == 2

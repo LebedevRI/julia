@@ -1167,10 +1167,11 @@ namespace {
             : JTMB(createJTMBFromTM(TM, optlevel)), O(getOptLevel(optlevel)), printers(printers) {}
 
         auto operator()() JL_NOTSAFEPOINT {
-            auto NPM = std::make_unique<NewPM>(cantFail(JTMB.createTargetMachine()), O);
-            printers.push_back([NPM = NPM.get()]() JL_NOTSAFEPOINT {
-                NPM->printTimers();
-            });
+            auto NPM = std::make_unique<NewPM>(
+                cantFail(JTMB.createTargetMachine()), O,
+                OptimizationOptions::defaults().setSanitizerCoverage(
+                    jl_options.sanitizer_coverage));
+            printers.push_back([NPM = NPM.get()]() JL_NOTSAFEPOINT { NPM->printTimers(); });
             return NPM;
         }
     };

@@ -33,6 +33,7 @@
 #include <llvm/Passes/PassPlugin.h>
 
 // NewPM needs to manually include all the pass headers
+#include <llvm/Transforms/Instrumentation/SanitizerCoverage.h>
 #include <llvm/Transforms/IPO/AlwaysInliner.h>
 #include <llvm/Transforms/IPO/Annotation2Metadata.h>
 #include <llvm/Transforms/IPO/ConstantMerge.h>
@@ -95,16 +96,23 @@ using namespace llvm;
 namespace {
     //Shamelessly stolen from Clang's approach to sanitizers
     //TODO do we want to enable other sanitizers?
-    static void addSanitizerPasses(ModulePassManager &MPM, OptimizationLevel O) JL_NOTSAFEPOINT {
-        // Coverage sanitizer
-        // if (CodeGenOpts.hasSanitizeCoverage()) {
-        //   auto SancovOpts = getSancovOptsFromCGOpts(CodeGenOpts);
-        //   MPM.addPass(ModuleSanitizerCoveragePass(
-        //       SancovOpts, CodeGenOpts.SanitizeCoverageAllowlistFiles,
-        //       CodeGenOpts.SanitizeCoverageIgnorelistFiles));
-        // }
+static void addSanitizerPasses(ModulePassManager &MPM, OptimizationLevel O,
+                               OptimizationOptions options) JL_NOTSAFEPOINT
+{
+    // Coverage sanitizer
+    if (options.sanitizer_coverage) {
+        SanitizerCoverageOptions Options;
+        // Matches clang-16's -fsanitize=fuzzer-no-link options.
+        Options.CoverageType = llvm::SanitizerCoverageOptions::SCK_Edge;
+        Options.IndirectCalls = true;
+        Options.TraceCmp = true;
+        Options.Inline8bitCounters = true;
+        Options.PCTable = true;
+        // Options.StackDepth = true; // FIXME: InitialExecTLSModel not supported by JITLink?
+        MPM.addPass(ModuleSanitizerCoveragePass(Options));
+    }
 
-    #ifdef _COMPILER_MSAN_ENABLED_
+#ifdef _COMPILER_MSAN_ENABLED_
         auto MSanPass = [&](/*SanitizerMask Mask, */bool CompileKernel) JL_NOTSAFEPOINT {
         // if (LangOpts.Sanitize.has(Mask)) {
             // int TrackOrigins = CodeGenOpts.SanitizeMemoryTrackOrigins;
@@ -180,7 +188,7 @@ namespace {
         // if (LangOpts.Sanitize.has(SanitizerKind::DataFlow)) {
         //   MPM.addPass(DataFlowSanitizerPass(LangOpts.NoSanitizeFiles));
         // }
-    }
+}
 
 #ifdef JL_DEBUG_BUILD
     static inline void addVerificationPasses(ModulePassManager &MPM, bool llvm_only) JL_NOTSAFEPOINT {
@@ -538,7 +546,7 @@ static void buildCleanupPipeline(ModulePassManager &MPM, PassBuilder *PB, Optimi
     }
     invokeOptimizerLastCallbacks(MPM, PB, O);
     MPM.addPass(createModuleToFunctionPassAdaptor(AnnotationRemarksPass()));
-    addSanitizerPasses(MPM, O);
+    addSanitizerPasses(MPM, O, options);
     {
         FunctionPassManager FPM;
         JULIA_PASS(FPM.addPass(DemoteFloat16Pass()));
@@ -773,7 +781,8 @@ static llvm::Optional<std::pair<OptimizationLevel, OptimizationOptions>> parseJu
             OPTION(lower_intrinsics),
             OPTION(dump_native),
             OPTION(external_use),
-            OPTION(llvm_only)
+            OPTION(llvm_only),
+            OPTION(sanitizer_coverage)
 #undef OPTION
         };
         while (!name.empty()) {

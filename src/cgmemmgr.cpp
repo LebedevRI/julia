@@ -861,8 +861,8 @@ uint8_t *RTDyldMemoryManagerJL::allocateCodeSection(uintptr_t Size,
 {
     // allocating more than one code section can confuse libunwind.
 #if !defined(_COMPILER_MSAN_ENABLED_) && !defined(_COMPILER_ASAN_ENABLED_)
-    // TODO: Figure out why msan and now asan too need this.
-    assert(!code_allocated);
+    // TODO: Figure out why msan,asan and now sancov too need this.
+    assert(!code_allocated || jl_options.sanitizer_coverage);
     code_allocated = true;
 #endif
     total_allocated += Size;

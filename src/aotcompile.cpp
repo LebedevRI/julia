@@ -2116,7 +2116,10 @@ void jl_get_llvmf_defn_impl(jl_llvmf_dump_t* dump, jl_method_instance_t *mi, siz
                 addOptimizationPasses(&PM, jl_options.opt_level);
                 addMachinePasses(&PM, jl_options.opt_level);
 #else
-                NewPM PM{jl_ExecutionEngine->cloneTargetMachine(), getOptLevel(jl_options.opt_level)};
+                NewPM PM{jl_ExecutionEngine->cloneTargetMachine(),
+                         getOptLevel(jl_options.opt_level),
+                         OptimizationOptions::defaults().setSanitizerCoverage(
+                             jl_options.sanitizer_coverage)};
 #endif
                 //Safe b/c context lock is held by output
                 PM.run(*m.getModuleUnlocked());

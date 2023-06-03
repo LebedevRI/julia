@@ -52,6 +52,7 @@ JL_DLLEXPORT void jl_init_options(void)
                         0,    // startup file
                         JL_OPTIONS_COMPILE_DEFAULT, // compile_enabled
                         0,    // code_coverage
+                        0,    // sanitizer_coverage
                         0,    // malloc_log
                         NULL, // tracked_path
                         2,    // opt_level
@@ -175,6 +176,7 @@ static const char opts[]  =
 
     " --code-coverage=tracefile.info\n"
     "                            Append coverage information to the LCOV tracefile (filename supports format tokens)\n"
+    " --sanitizer-coverage       Enable LLVM IR coverage instrumentation pass\n"
 // TODO: These TOKENS are defined in `runtime_ccall.cpp`. A more verbose `--help` should include that list here.
     " --track-allocation[={none*|user|all}]\n"
     "                            Count bytes allocated by each source line (omitting setting is equivalent to `user`)\n"
@@ -223,6 +225,7 @@ JL_DLLEXPORT void jl_parse_opts(int *argcp, char ***argvp)
            opt_startup_file,
            opt_compile,
            opt_code_coverage,
+           opt_sanitizer_coverage,
            opt_track_allocation,
            opt_check_bounds,
            opt_output_unopt_bc,
@@ -291,6 +294,7 @@ JL_DLLEXPORT void jl_parse_opts(int *argcp, char ***argvp)
         { "startup-file",    required_argument, 0, opt_startup_file },
         { "compile",         required_argument, 0, opt_compile },
         { "code-coverage",   optional_argument, 0, opt_code_coverage },
+        { "sanitizer-coverage", optional_argument, 0, opt_sanitizer_coverage },
         { "track-allocation",optional_argument, 0, opt_track_allocation },
         { "optimize",        optional_argument, 0, 'O' },
         { "min-optlevel",    optional_argument, 0, opt_optlevel_min },
@@ -602,6 +606,9 @@ restart_switch:
             else {
                 codecov = JL_LOG_USER;
             }
+            break;
+        case opt_sanitizer_coverage:
+            jl_options.sanitizer_coverage = 1;
             break;
         case opt_track_allocation:
             if (optarg != NULL) {

@@ -27,6 +27,7 @@ typedef struct {
     int8_t startupfile;
     int8_t compile_enabled;
     int8_t code_coverage;
+    int8_t sanitizer_coverage;
     int8_t malloc_log;
     const char *tracked_path;
     int8_t opt_level;

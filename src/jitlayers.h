@@ -49,6 +49,10 @@
 #endif
 // The sanitizers don't play well with our memory manager
 
+// FIXME: sanitizer-coverage is enabled at julia run-time,
+//        yet it does not play well at all with RuntimeDyld.
+# define JL_USE_JITLINK
+
 #if defined(JL_FORCE_JITLINK) || JL_LLVM_VERSION >= 150000 && defined(HAS_SANITIZER)
 # define JL_USE_JITLINK
 #else
@@ -88,13 +92,21 @@ struct OptimizationOptions {
     bool dump_native;
     bool external_use;
     bool llvm_only;
+    bool sanitizer_coverage;
+
+    OptimizationOptions &setSanitizerCoverage(bool b)
+    {
+        sanitizer_coverage = b;
+        return *this;
+    }
 
     static constexpr OptimizationOptions defaults(
         bool lower_intrinsics=true,
         bool dump_native=false,
         bool external_use=false,
-        bool llvm_only=false) {
-        return {lower_intrinsics, dump_native, external_use, llvm_only};
+        bool llvm_only=false,
+        bool sanitizer_coverage=false) {
+        return {lower_intrinsics, dump_native, external_use, llvm_only, sanitizer_coverage};
     }
 };
 
@@ -112,7 +124,7 @@ struct NewPM {
     ModulePassManager MPM;
     OptimizationLevel O;
 
-    NewPM(std::unique_ptr<TargetMachine> TM, OptimizationLevel O, OptimizationOptions options = OptimizationOptions::defaults()) JL_NOTSAFEPOINT;
+    NewPM(std::unique_ptr<TargetMachine> TM, OptimizationLevel O, OptimizationOptions options) JL_NOTSAFEPOINT;
     ~NewPM() JL_NOTSAFEPOINT;
 
     void run(Module &M) JL_NOTSAFEPOINT;

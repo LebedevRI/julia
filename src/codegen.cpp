@@ -8934,6 +8934,84 @@ static JuliaVariable *julia_const_gv(jl_value_t *val)
     return nullptr;
 }
 
+static void emitSancovStubs(Module &M)
+{
+    auto &ctx = M.getContext();
+    auto *intPtrTy = M.getDataLayout().getIntPtrType(getInt8PtrTy(ctx));
+
+    // FIXME: would be required for StackDepth sanitizer coverage,
+    //        but InitialExecTLSModel is not supported by JITLink?
+    if (false) {
+        auto GV = new GlobalVariable(
+            M, intPtrTy, /*isConstant=*/false, GlobalVariable::CommonLinkage,
+            ConstantInt::getNullValue(intPtrTy), "__sancov_lowest_stack",
+            /*InsertBefore=*/nullptr, GlobalValue::ThreadLocalMode::InitialExecTLSModel);
+        GV->setVisibility(GlobalValue::VisibilityTypes::DefaultVisibility);
+        GV->setDSOLocal(true);
+    }
+
+    auto emitStub = [&ctx, &M](Twine fname, ArrayRef<Type *> argTys) {
+        FunctionType *ft = FunctionType::get(Type::getVoidTy(ctx), argTys,
+                                             /*isVarArg=*/false);
+        auto *stub =
+            Function::Create(ft, GlobalValue::LinkageTypes::LinkOnceAnyLinkage, fname, M);
+        for (auto I : enumerate(argTys)) {
+            if (I.value()->isIntegerTy())
+                stub->addParamAttr(I.index(), Attribute::AttrKind::ZExt);
+        }
+        llvm::IRBuilder<> builder(BasicBlock::Create(ctx, "entry", stub));
+        builder.CreateRetVoid();
+    };
+
+    emitStub("__sanitizer_cov_trace_pc", {});
+
+    emitStub("__sanitizer_cov_trace_pc_guard", {getInt32PtrTy(ctx)});
+
+    emitStub("__sanitizer_cov_trace_pc_indir", intPtrTy);
+
+    emitStub("__sanitizer_cov_8bit_counters_init", {getInt8PtrTy(ctx), getInt8PtrTy(ctx)});
+
+    emitStub("__sanitizer_cov_pcs_init", {
+                                             intPtrTy->getPointerTo(/*AS=*/0),
+                                             intPtrTy->getPointerTo(/*AS=*/0),
+                                         });
+
+    emitStub("__sanitizer_cov_trace_switch",
+             {Type::getInt64Ty(ctx), Type::getInt64PtrTy(ctx)});
+
+    emitStub("__sanitizer_cov_trace_gep", {intPtrTy});
+
+    for (int size = 1; size <= 8; size *= 2) {
+        Type *intNTy = Type::getIntNTy(ctx, 8 * size);
+        for (StringRef prefix : {"", "const_"}) {
+            emitStub(Twine("__sanitizer_cov_trace_") + prefix + "cmp" +
+                         std::to_string(size),
+                     {intNTy, intNTy});
+        }
+    }
+
+    for (int size = 1; size <= 16; size *= 2) {
+        for (StringRef prefix : {"load", "store"}) {
+            emitStub(Twine("__sanitizer_cov_") + prefix + std::to_string(size),
+                     {Type::getIntNPtrTy(ctx, 8 * size, /*AS=*/0)});
+        }
+    }
+
+    for (int size = 4; size <= 8; size *= 2) {
+        emitStub(Twine("__sanitizer_cov_trace_div") + std::to_string(size),
+                 {Type::getIntNTy(ctx, 8 * size)});
+    }
+}
+
+static void init_sancov_stubs(void)
+{
+    auto ctx = jl_ExecutionEngine->acquireContext();
+    auto TSM = jl_create_ts_module("sancov.stubs", ctx, imaging_default());
+    auto aliasM = TSM.getModuleUnlocked();
+    emitSancovStubs(*aliasM);
+    jl_ExecutionEngine->addModule(std::move(TSM));
+}
+
 // Handle FLOAT16 ABI v2
 #if JULIA_FLOAT16_ABI == 2
 static void makeCastCall(Module &M, StringRef wrapperName, StringRef calledName, FunctionType *FTwrapper, FunctionType *FTcalled, bool external)
@@ -9230,6 +9308,8 @@ extern "C" JL_DLLEXPORT_CODEGEN void jl_init_codegen_impl(void)
     jl_init_llvm();
     // Now that the execution engine exists, initialize all modules
     init_jit_functions();
+    if(jl_options.sanitizer_coverage)
+        init_sancov_stubs();
 #if JULIA_FLOAT16_ABI == 2
     init_f16_funcs();
 #endif
